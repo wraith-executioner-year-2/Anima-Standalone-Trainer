@@ -977,6 +977,10 @@ function buildLaunchConfig(gpuIds, mergedConfig, mergedConfigPath, jobArch) {
         if (validIds.length > 1) {
             if (mode === 'tp_sp') {
                 const hasNet = !!(mergedConfig.network_arguments?.network_module);
+                const netModule = mergedConfig.network_arguments?.network_module || '';
+                if (netModule === 'networks.loha' || netModule === 'networks.lokr') {
+                    return { error: `${netModule} does not support TP/SP yet (single-GPU only). Use networks.lora_anima for multi-GPU TP/SP, or switch parallelism mode to DDP/FSDP.` };
+                }
                 const tpScript = hasNet
                     ? jobArch.scripts?.train_network_tp_sp
                     : jobArch.scripts?.train_tp_sp;
@@ -996,19 +1000,9 @@ function buildLaunchConfig(gpuIds, mergedConfig, mergedConfigPath, jobArch) {
                 const reshard = ta.fsdp2_reshard_after_forward ?? true;
                 accelerateFlags = `--use_fsdp --fsdp_version 2 --num_processes ${validIds.length} --mixed_precision ${mixedPrec}`;
                 accelerateFlags += ` --fsdp_reshard_after_forward ${reshard ? 'true' : 'false'}`;
-                accelerateFlags += ` --fsdp_cpu_ram_efficient_loading ${ta.fsdp2_cpu_ram_efficient_loading ? 'true' : 'false'}`;
-                if (ta.fsdp2_cpu_ram_efficient_loading)  accelerateFlags += ` --fsdp_sync_module_states true`;
-                if (ta.fsdp2_offload_params)             accelerateFlags += ` --fsdp_offload_params true`;
-                if (ta.fsdp2_activation_checkpointing)   accelerateFlags += ` --fsdp_activation_checkpointing true`;
-                if (ta.fsdp2_auto_wrap_policy && ta.fsdp2_auto_wrap_policy !== 'NO_WRAP') {
-                    accelerateFlags += ` --fsdp_auto_wrap_policy ${ta.fsdp2_auto_wrap_policy}`;
-                    if (ta.fsdp2_auto_wrap_policy === 'SIZE_BASED_WRAP' && ta.fsdp2_min_num_params)
-                        accelerateFlags += ` --fsdp_min_num_params ${ta.fsdp2_min_num_params}`;
-                    if (ta.fsdp2_auto_wrap_policy === 'TRANSFORMER_BASED_WRAP') {
-                        const cls = (ta.fsdp2_transformer_layer_cls_to_wrap || '').trim() || (jobArch.fsdp_transformer_cls || '');
-                        if (cls) accelerateFlags += ` --fsdp_transformer_layer_cls_to_wrap "${cls}"`;
-                    }
-                }
+                if (ta.fsdp2_cpu_ram_efficient_loading) accelerateFlags += ` --fsdp_sync_module_states true --fsdp_cpu_ram_efficient_loading true`;
+                if (ta.fsdp2_offload_params) accelerateFlags += ` --fsdp_offload_params true`;
+                if (ta.fsdp2_activation_checkpointing) accelerateFlags += ` --fsdp_activation_checkpointing true`;
 
             } else if (mode === 'fsdp') {
                 accelerateFlags = `--use_fsdp --fsdp_version 1 --num_processes ${validIds.length} --mixed_precision ${mixedPrec}`;
